@@ -83,26 +83,54 @@ size_t Node::realSize() const {
 #pragma pack(pop) // exact fit - no padding
 
 class NodeList {
-  static constexpr size_t size = 10*1024*1024;
+  static constexpr size_t defaultSize = 196*1024;
   static constexpr size_t gapSize = sizeof(NodeList*);
 
   uintptr_t buf;
   uintptr_t pos;
 
-  static constexpr unsigned gapsStore = 4;
-  NodeList* gaps[gapsStore];
+  const uintptr_t size;
+
+  static constexpr unsigned gapsCacheSize = 8;
+  NodeList* gapsCache[gapsCacheSize];
   unsigned numGaps = 0;
 
- public:
-  NodeList() {
+  NodeList* next = nullptr;
 
-    buf = (uintptr_t)malloc(size);
+ public:
+  size_t totalSize() {
+    size_t sum = size;
+
+    if (numGaps > gapsCacheSize) {
+      uintptr_t finger = buf;
+      while (true) {
+        NodeList** gap = reinterpret_cast<NodeList**>(finger);
+        if (*gap)
+          sum += (*gap)->totalSize();
+        finger += gapSize;
+        if (finger >= pos)
+          break;
+        auto n = (Node*)finger;
+        finger += n->realSize();
+      }
+    } else {
+      for (unsigned i = 0; i < numGaps; ++i) {
+        sum += gapsCache[i]->totalSize();
+      }
+    }
+    if (next)
+      sum += next->totalSize();
+    return sum;
+  }
+
+  NodeList(size_t initSize = defaultSize) : size(initSize) {
+    buf = (uintptr_t)malloc(initSize);
     *(NodeList**)buf = nullptr;
     pos = buf + gapSize;
   }
 
   ~NodeList() {
-    if (numGaps > gapsStore) {
+    if (numGaps > gapsCacheSize) {
       uintptr_t finger = buf;
       while (true) {
         NodeList** gap = reinterpret_cast<NodeList**>(finger);
@@ -115,9 +143,10 @@ class NodeList {
       }
     } else {
       for (unsigned i = 0; i < numGaps; ++i) {
-        delete gaps[i];
+        delete gapsCache[i];
       }
     }
+    if (next) delete next;
     free((void*)buf);
   }
 
@@ -137,12 +166,17 @@ class NodeList {
   }
 
   void* prepareInsert(size_t s) {
-    void* res = (void*)pos;
-    pos += s;
-    *(NodeList**)pos = nullptr;
-    pos += gapSize;
-    assert((uintptr_t)pos < (uintptr_t)buf + size);
-    return res;
+    uintptr_t next_pos = pos + s + gapSize;
+    if (next_pos < buf + size) {
+      void* res = (void*)pos;
+      pos += s;
+      *(NodeList**)pos = nullptr;
+      pos += gapSize;
+      assert((uintptr_t)pos < (uintptr_t)buf + size);
+      return res;
+    }
+    if (!next) next = new NodeList();
+    return next->prepareInsert(s);
   }
 
   inline Node* insert(Node* n) {
@@ -156,10 +190,10 @@ class NodeList {
   }
 
   NodeList* flatten() {
-    auto flat = new NodeList();
+    auto flat = new NodeList(totalSize());
 
     // Bulk copy, to avoid doing insert(Node*) for every element
-    auto fixup = [](uintptr_t old_start,
+    auto fixup = [flat](uintptr_t old_start,
                     uintptr_t old_end,
                     uintptr_t new_start) -> uintptr_t {
 
@@ -167,6 +201,7 @@ class NodeList {
       size_t last_size = last->realSize();
 
       size_t s = old_end - old_start + last_size;
+      assert(new_start + s < flat->buf + flat->size);
       memcpy((void*)new_start, (void*)old_start, s);
 
       uintptr_t finger_new = new_start;
@@ -188,14 +223,16 @@ class NodeList {
     };
 
     auto i = begin();
+    NodeList* cur = i.cur;
     uintptr_t bulkFixupStart = i.pos;
     uintptr_t bulkFixupEnd = i.pos;
     unsigned depth = 0;
 
     for (; !i.isEnd(); ++i) {
-      if (i.worklist.size() != depth) {
+      if (cur != i.cur || i.worklist.size() != depth) {
         flat->pos = fixup(bulkFixupStart, bulkFixupEnd, flat->pos);
         depth = i.worklist.size();
+        cur = i.cur;
         bulkFixupStart = i.pos;
       }
       bulkFixupEnd = i.pos;
@@ -206,6 +243,7 @@ class NodeList {
   }
 
   class iterator {
+    NodeList* cur;
     uintptr_t pos;
     uintptr_t end;
     std::stack<uintptr_t> worklist;
@@ -232,9 +270,18 @@ class NodeList {
       }
     }
 
+    iterator () {};
+
    public:
-    iterator(uintptr_t start, uintptr_t end) : pos(start), end(end) {
-      if (start != -1)
+    static iterator theEnd() {
+      iterator i;
+      i.pos = i.end = -1;
+      return i;
+    }
+
+    iterator(NodeList* cur) : cur(cur),
+                              pos(cur->buf + gapSize),
+                              end(cur->pos) {
         findStart();
     }
 
@@ -251,6 +298,11 @@ class NodeList {
     }
 
     void operator ++ () {
+      if (cur->next && pos == end) {
+        cur = cur->next;
+        pos = cur->buf + gapSize;
+        end = cur->pos;
+      }
       if (pos == end) {
         while (pos == end) {
           assert(!worklist.empty());
@@ -278,8 +330,8 @@ class NodeList {
       NodeList** gap = reinterpret_cast<NodeList**>(pos - gapSize);
       if (!*gap) {
         *gap = new NodeList();
-        if (p->numGaps < p->gapsStore) {
-          p->gaps[p->numGaps] = *gap;
+        if (p->numGaps < p->gapsCacheSize) {
+          p->gapsCache[p->numGaps] = *gap;
         }
         p->numGaps++;
       }
@@ -296,11 +348,11 @@ class NodeList {
   }
 
   iterator begin() {
-    return iterator(buf + gapSize, pos);
+    return iterator(this);
   }
 
   iterator end() {
-    return iterator(-1, -1);
+    return iterator::theEnd();
   }
 
   iterator at(size_t pos) {

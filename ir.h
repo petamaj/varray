@@ -213,7 +213,7 @@ class NodeList {
     auto flat = new NodeList(totalSize());
 
     // Bulk copy, to avoid doing insert(Node*) for every element
-    auto fixup = [flat](uintptr_t old_start,
+    auto fixup = [](uintptr_t old_start,
                     uintptr_t old_end,
                     uintptr_t new_start) -> uintptr_t {
 
@@ -221,7 +221,6 @@ class NodeList {
       size_t last_size = last->realSize();
 
       size_t s = old_end - old_start + last_size;
-      assert(new_start + s < flat->buf + flat->size);
       memcpy((void*)new_start, (void*)old_start, s);
 
       uintptr_t finger_new = new_start;

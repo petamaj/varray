@@ -65,10 +65,21 @@ void test(bool print = false) {
   delete flat2;
 }
 
+using namespace std;
+
 int main() {
-  test(true);
+//  test(true);
+
+  clock_t begin = clock();
+
   for (int i = 0; i < 500; ++i) {
     test();
   }
+
+  clock_t end = clock();
+  double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
+
+  std::cerr << "Varray took : " << elapsed_secs << "\n";
+
   return 0;
 }

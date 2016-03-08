@@ -4,6 +4,7 @@
 #include <cstring>
 #include <string>
 #include <stack>
+#include <deque>
 #include <iostream>
 #include <list>
 
@@ -63,26 +64,25 @@ class Add : public Node {
 
 #pragma pack(pop) // exact fit - no padding
 
-class NodeList : public std::list<Node*> {
+typedef std::deque<Node*> nodeDeque;
+typedef std::list<Node*> nodeList;
+
+template<typename container>
+class NodeList : public container {
  public:
   ~NodeList() {
     for (auto n : *this)
       delete n;
   }
 
-  std::list<Node*>::iterator at(size_t pos) {
+  typename container::iterator at(size_t pos) {
     auto it = this->begin();
     std::advance(it, pos);
     return it;
   }
 
   Node* push_back(Node* n) {
-    std::list<Node*>::push_back(n);
-    return n;
-  }
-
-  Node* insert(std::list<Node*>::iterator it, Node* n) {
-    std::list<Node*>::insert(it, n);
+    container::push_back(n);
     return n;
   }
 };

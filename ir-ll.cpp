@@ -1,7 +1,8 @@
 #include "ir-ll.h"
 
+template <typename container>
 void test(bool print = false) {
-  auto bb = new NodeList();
+  auto bb = new NodeList<container>();
   auto* c1 = bb->push_back(new Constant(1));
   auto* c2 = bb->push_back(new Constant(2));
   auto* a = bb->push_back(new Add(c1, c2));
@@ -12,8 +13,8 @@ void test(bool print = false) {
     std::cout << "===============\n";
   }
 
-  auto patch = bb->at(1);
-  Node* c3 = bb->insert(patch, new Constant(3));
+  Node* c3 = new Constant(3);
+  bb->insert(bb->at(1), c3);
 
   if (print) {
     for (auto i : *bb)
@@ -21,8 +22,8 @@ void test(bool print = false) {
     std::cout << "===============\n";
   }
 
-  auto patch2 = bb->at(1);
-  auto c4 = bb->insert(patch2, new Constant(4));
+  auto c4 = new Constant(4);
+  bb->insert(bb->at(1), c4);
 
   if (print) {
     for (auto i : *bb)
@@ -30,8 +31,8 @@ void test(bool print = false) {
     std::cout << "===============\n";
   }
 
-  auto patch3 = bb->at(3);
-  auto a1 = bb->insert(patch3, new Add(c3, c4));
+  auto a1 = new Add(c3, c4);
+  bb->insert(bb->at(3), a1);
   bb->push_back(new Add(a1, a));
 
   if (print) {
@@ -41,8 +42,10 @@ void test(bool print = false) {
   }
 
   auto patch4 = bb->at(6);
-  for (int i = 0; i < 100000; ++i)
-    bb->insert(patch4, new Constant(i));
+  for (int i = 0; i < 100000; ++i) {
+    patch4 = bb->insert(patch4, new Constant(i));
+    ++patch4;
+  }
 
   int count = 0;
   for (auto i : *bb) count++;
@@ -53,9 +56,30 @@ void test(bool print = false) {
 }
 
 int main() {
-  test(true);
+  // test<nodeList>(true);
+
+  clock_t begin = clock();
+
   for (int i = 0; i < 500; ++i) {
-    test();
+    test<nodeList>();
   }
+
+  clock_t end = clock();
+  double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
+
+  std::cerr << "Linked list took : " << elapsed_secs << "\n";
+
+  begin = clock();
+
+  for (int i = 0; i < 500; ++i) {
+    test<nodeDeque>();
+  }
+
+  end = clock();
+  elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
+
+  std::cerr << "Deque took : " << elapsed_secs << "\n";
+
+
   return 0;
 }

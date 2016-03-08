@@ -15,7 +15,7 @@ class Node {
     Add,
   };
 
-  size_t realSize();
+  inline size_t realSize() const;
 
   const Type type;
   Node(const Type type) : type(type) {}
@@ -73,7 +73,7 @@ class Add : public Node {
   }
 };
 
-size_t Node::realSize() {
+size_t Node::realSize() const {
   switch(type) {
     case Type::Constant: return sizeof(Constant);
     case Type::Add: return sizeof(Add);
@@ -134,7 +134,7 @@ class NodeList {
     return res;
   }
 
-  Node* insert(Node* n) {
+  inline Node* insert(Node* n) {
     size_t s = n->realSize();
     memcpy((void*)pos, (void*)n, s);
     auto res = (Node*)pos;
@@ -146,10 +146,50 @@ class NodeList {
 
   NodeList* flatten() {
     auto flat = new NodeList();
+
+    constexpr int bufSize = 1024;
+
+    Node* bulkFixup[bufSize];
+    int fixupBuffer = 0;
+
+    // Bulk copy, to avoid doing insert(Node*) for every element
+    auto fixup = [&fixupBuffer, &bulkFixup]
+                 (uintptr_t pos) -> uintptr_t {
+      Node* first = bulkFixup[0];
+      Node* last = bulkFixup[fixupBuffer-1];
+      size_t s = (uintptr_t)last - (uintptr_t)first + last->realSize();
+      memcpy((void*)pos, (void*)first, s);
+
+      uintptr_t finger;
+
+      finger = pos;
+      for (int i = 0; i < fixupBuffer && i < bufSize; ++i) {
+        Node* old = bulkFixup[i];
+        Node* copy = (Node*)finger;
+        size_t s = copy->realSize();
+        copy->adjustOffset(old);
+        *((NodeList**)(finger - gapSize)) = nullptr;
+        finger += s + gapSize;
+      }
+
+      pos = finger;
+
+      *((NodeList**)(pos - gapSize)) = nullptr;
+      fixupBuffer = 0;
+
+      return pos;
+    };
+
+    int depth = 0;
     for (auto i = begin(); i.isEnd(); ++i) {
-      Node* copy = flat->insert(*i);
-      copy->adjustOffset(*i);
+      if (fixupBuffer == bufSize || i.worklist.size() != depth) {
+        flat->pos = fixup(flat->pos);
+        depth = i.worklist.size();
+      }
+      bulkFixup[fixupBuffer++] = *i;
     }
+    flat->pos = fixup(flat->pos);
+
     return flat;
   }
 

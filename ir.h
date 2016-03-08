@@ -169,6 +169,10 @@ class NodeList {
   }
 
   void* prepareInsert(size_t s) {
+    if (nextFree && !nextFree->full) {
+      return nextFree->prepareInsert(s);
+    }
+
     uintptr_t next_pos = pos + s + gapSize;
     if (next_pos < buf + size) {
       void* res = (void*)pos;
@@ -177,10 +181,6 @@ class NodeList {
       pos += gapSize;
       assert((uintptr_t)pos < (uintptr_t)buf + size);
       return res;
-    }
-
-    if (nextFree && !nextFree->full) {
-      return nextFree->prepareInsert(s);
     }
 
     full = true;

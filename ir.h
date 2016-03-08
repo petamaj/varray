@@ -147,48 +147,49 @@ class NodeList {
   NodeList* flatten() {
     auto flat = new NodeList();
 
-    constexpr int bufSize = 1024;
-
-    Node* bulkFixup[bufSize];
-    int fixupBuffer = 0;
-
     // Bulk copy, to avoid doing insert(Node*) for every element
-    auto fixup = [&fixupBuffer, &bulkFixup]
-                 (uintptr_t pos) -> uintptr_t {
-      Node* first = bulkFixup[0];
-      Node* last = bulkFixup[fixupBuffer-1];
-      size_t s = (uintptr_t)last - (uintptr_t)first + last->realSize();
-      memcpy((void*)pos, (void*)first, s);
+    auto fixup = [](uintptr_t old_start,
+                    uintptr_t old_end,
+                    uintptr_t new_start) -> uintptr_t {
 
-      uintptr_t finger;
+      Node* last = (Node*) old_end;
+      size_t last_size = last->realSize();
 
-      finger = pos;
-      for (int i = 0; i < fixupBuffer && i < bufSize; ++i) {
-        Node* old = bulkFixup[i];
-        Node* copy = (Node*)finger;
+      size_t s = old_end - old_start + last_size;
+      memcpy((void*)new_start, (void*)old_start, s);
+
+      uintptr_t finger_new = new_start;
+      uintptr_t finger_old = old_start;
+
+      while (finger_old <= old_end) {
+        Node* old = (Node*)finger_old;
+        Node* copy = (Node*)finger_new;
         size_t s = copy->realSize();
         copy->adjustOffset(old);
-        *((NodeList**)(finger - gapSize)) = nullptr;
-        finger += s + gapSize;
+        *((NodeList**)(finger_new - gapSize)) = nullptr;
+        finger_old += s + gapSize;
+        finger_new += s + gapSize;
       }
 
-      pos = finger;
+      *((NodeList**)(finger_new - gapSize)) = nullptr;
 
-      *((NodeList**)(pos - gapSize)) = nullptr;
-      fixupBuffer = 0;
-
-      return pos;
+      return finger_new;
     };
 
-    int depth = 0;
-    for (auto i = begin(); i.isEnd(); ++i) {
-      if (fixupBuffer == bufSize || i.worklist.size() != depth) {
-        flat->pos = fixup(flat->pos);
+    auto i = begin();
+    uintptr_t bulkFixupStart = i.pos;
+    uintptr_t bulkFixupEnd = i.pos;
+    unsigned depth = 0;
+
+    for (; !i.isEnd(); ++i) {
+      if (i.worklist.size() != depth) {
+        flat->pos = fixup(bulkFixupStart, bulkFixupEnd, flat->pos);
         depth = i.worklist.size();
+        bulkFixupStart = i.pos;
       }
-      bulkFixup[fixupBuffer++] = *i;
+      bulkFixupEnd = i.pos;
     }
-    flat->pos = fixup(flat->pos);
+    flat->pos = fixup(bulkFixupStart, bulkFixupEnd, flat->pos);
 
     return flat;
   }
@@ -228,14 +229,14 @@ class NodeList {
 
     bool operator != (iterator& other) {
       assert(other.pos == -1 && other.end == -1);
-      return isEnd();
+      return !isEnd();
     }
 
     bool isEnd() {
       while (pos == end && !worklist.empty()) {
         popWorklist();
       }
-      return !worklist.empty() || pos != end;
+      return worklist.empty() && pos == end;
     }
 
     void operator ++ () {

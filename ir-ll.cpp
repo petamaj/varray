@@ -42,13 +42,27 @@ void test(bool print = false) {
   }
 
   auto patch4 = bb->at(6);
-  for (int i = 0; i < 100000; ++i) {
-    patch4 = bb->insert(patch4, new Constant(i));
+  for (int i = 0; i < 40000; ++i) {
+    auto c1 = new Constant(i);
+    auto c2 = new Constant(i);
+    patch4 = bb->insert(patch4, c2);
+    patch4 = bb->insert(patch4, c1);
+    ++patch4;
+    ++patch4;
+    patch4 = bb->insert(patch4, new Add(c1, c2));
     ++patch4;
   }
 
   int count = 0;
-  for (auto i : *bb) count++;
+  // Simulate an analysis:
+  for (auto i : *bb) {
+    if (i->type == Node::Type::Add) {
+      Node * l = ((Add*)i)->l();
+      if (l->type == Node::Type::Constant) {
+        count += ((Constant*)l)->value;
+      }
+    }
+  }
   if (print)
     std::cout << count << "\n";
 
@@ -56,7 +70,7 @@ void test(bool print = false) {
 }
 
 int main() {
-  // test<nodeList>(true);
+  // test<nodeDeque>(true);
 
   clock_t begin = clock();
 

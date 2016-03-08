@@ -51,14 +51,25 @@ void test(bool print = false) {
   }
 
   auto patch4 = flat->at(6).insertBefore();
-  for (int i = 0; i < 100000; ++i)
-    patch4->insert<Constant>(i);
+  for (int i = 0; i < 40000; ++i) {
+    patch4->insert<Add>(
+        patch4->insert<Constant>(i),
+        patch4->insert<Constant>(i));
+  }
 
   auto flat2 = flat->flatten();
   delete flat;
 
   int count = 0;
-  for (auto i : *flat2) count++;
+  // Simulate an analysis:
+  for (auto i : *flat2) {
+    if (i->type == Node::Type::Add) {
+      Node * l = ((Add*)i)->l();
+      if (l->type == Node::Type::Constant) {
+        count += ((Constant*)l)->value;
+      }
+    }
+  }
   if (print)
     std::cout << count << "\n";
 
@@ -68,7 +79,7 @@ void test(bool print = false) {
 using namespace std;
 
 int main() {
-//  test(true);
+  // test(true);
 
   clock_t begin = clock();
 

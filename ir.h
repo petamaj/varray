@@ -170,7 +170,7 @@ class NodeList {
     return new(prepareInsert(sizeof(Node))) Node(arg1, arg2);
   }
 
-  void* prepareInsert(size_t s) {
+  inline void* prepareInsert(size_t s) {
     if (nextFree && !nextFree->full) {
       return nextFree->prepareInsert(s);
     }
@@ -178,13 +178,15 @@ class NodeList {
     uintptr_t next_pos = pos + s + gapSize;
     if (next_pos < buf + size) {
       void* res = (void*)pos;
-      pos += s;
-      *(NodeList**)pos = nullptr;
-      pos += gapSize;
-      assert((uintptr_t)pos < (uintptr_t)buf + size);
+      pos = next_pos;
+      *(NodeList**)(pos - gapSize) = nullptr;
       return res;
     }
 
+    return prepareInsertSlow(s);
+  }
+
+  void* prepareInsertSlow(size_t s) {
     full = true;
 
     NodeList* cur = this;

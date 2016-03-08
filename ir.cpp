@@ -94,7 +94,7 @@ int main(int argc, char *argv[]) {
   clock_t end = clock();
   double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
 
-  std::cerr << "Varray list (" << count << ") took : "
+  std::cerr << "Varray      (" << count << ") took : "
             << elapsed_secs << "\n";
 
   return 0;

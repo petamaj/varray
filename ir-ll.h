@@ -8,8 +8,6 @@
 #include <iostream>
 #include <list>
 
-#pragma pack(push, 1) // exact fit - no padding
-
 class Node {
  public:
   enum class Type : char {
@@ -61,8 +59,6 @@ class Add : public Node {
     os << *l() << " + " << *r();
   }
 };
-
-#pragma pack(pop) // exact fit - no padding
 
 typedef std::deque<Node*> nodeDeque;
 typedef std::list<Node*> nodeList;

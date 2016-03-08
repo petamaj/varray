@@ -83,11 +83,14 @@ size_t Node::realSize() const {
 #pragma pack(pop) // exact fit - no padding
 
 class NodeList {
-  static constexpr size_t defaultSize = 196*1024;
+  static constexpr size_t defaultSize = 128*1024;
   static constexpr size_t gapSize = sizeof(NodeList*);
 
   uintptr_t buf;
   uintptr_t pos;
+
+  bool full = false;
+  NodeList* nextFree = nullptr;
 
   const uintptr_t size;
 
@@ -175,8 +178,25 @@ class NodeList {
       assert((uintptr_t)pos < (uintptr_t)buf + size);
       return res;
     }
-    if (!next) next = new NodeList();
-    return next->prepareInsert(s);
+
+    if (nextFree && !nextFree->full) {
+      return nextFree->prepareInsert(s);
+    }
+
+    full = true;
+
+    NodeList* cur = this;
+    while(cur->full && cur->next) {
+      cur = cur->next;
+    }
+
+    if (cur == this) {
+      next = nextFree = new NodeList();
+      return next->prepareInsert(s);
+    }
+
+    nextFree = cur;
+    return nextFree->prepareInsert(s);
   }
 
   inline Node* insert(Node* n) {

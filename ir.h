@@ -1,5 +1,4 @@
 #include <cstdint>
-#include <cstdlib>
 #include <cassert>
 #include <cstring>
 #include <string>
@@ -78,6 +77,8 @@ size_t Node::realSize() const {
     case Type::Constant: return sizeof(Constant);
     case Type::Add: return sizeof(Add);
   }
+  assert(false);
+  return -1;
 }
 
 #pragma pack(pop) // exact fit - no padding
@@ -127,7 +128,8 @@ class NodeList {
   }
 
   NodeList(size_t initSize = defaultSize) : size(initSize) {
-    buf = (uintptr_t)malloc(initSize);
+    buf = (uintptr_t)new char[initSize];
+
     *(NodeList**)buf = nullptr;
     pos = buf + gapSize;
   }
@@ -150,7 +152,7 @@ class NodeList {
       }
     }
     if (next) delete next;
-    free((void*)buf);
+    delete[] (char*)buf;
   }
 
   template<typename Node>
@@ -305,7 +307,7 @@ class NodeList {
     }
 
     bool operator != (iterator& other) {
-      assert(other.pos == -1 && other.end == -1);
+      assert((int)other.pos == -1 && (int)other.end == -1);
       return !isEnd();
     }
 

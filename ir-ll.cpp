@@ -72,30 +72,34 @@ void test(bool print = false) {
 int main(int argc, char *argv[]) {
   // test<nodeDeque>(true);
 
-  assert(argc == 2);
+  assert(argc == 3);
+
+  int count = atoi(argv[2]);
 
   if (strcmp("list", argv[1]) == 0) {
     clock_t begin = clock();
 
-    for (int i = 0; i < 500; ++i) {
+    for (int i = 0; i < count; ++i) {
       test<nodeList>();
     }
 
     clock_t end = clock();
     double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
 
-    std::cerr << "Linked list took : " << elapsed_secs << "\n";
+    std::cerr << "Linked list (" << count << ") took : "
+              << elapsed_secs << "\n";
   } else {
     clock_t begin = clock();
 
-    for (int i = 0; i < 500; ++i) {
+    for (int i = 0; i < count; ++i) {
       test<nodeDeque>();
     }
 
     clock_t end = clock();
     double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
 
-    std::cerr << "Deque took : " << elapsed_secs << "\n";
+    std::cerr << "Deque      (" << count << ") took : "
+              << elapsed_secs << "\n";
   }
 
   return 0;

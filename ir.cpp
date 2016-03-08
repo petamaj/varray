@@ -78,19 +78,24 @@ void test(bool print = false) {
 
 using namespace std;
 
-int main() {
+int main(int argc, char *argv[]) {
   // test(true);
+
+  assert(argc == 2);
+
+  int count = atoi(argv[1]);
 
   clock_t begin = clock();
 
-  for (int i = 0; i < 500; ++i) {
+  for (int i = 0; i < count; ++i) {
     test();
   }
 
   clock_t end = clock();
   double elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
 
-  std::cerr << "Varray took : " << elapsed_secs << "\n";
+  std::cerr << "Varray list (" << count << ") took : "
+            << elapsed_secs << "\n";
 
   return 0;
 }

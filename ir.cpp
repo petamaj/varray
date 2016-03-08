@@ -13,7 +13,7 @@ void test(bool print = false) {
     std::cout << "===============\n";
   }
 
-  auto patch = bb->at(1).insertBefore();
+  auto patch = bb->insertBefore(bb->at(1));
   auto c3 = patch->insert<Constant>(3);
 
   if (print) {
@@ -22,7 +22,7 @@ void test(bool print = false) {
     std::cout << "===============\n";
   }
 
-  auto patch2 = bb->at(1).insertBefore();
+  auto patch2 = bb->insertBefore(bb->at(1));
   auto c4 = patch2->insert<Constant>(4);
 
   if (print) {
@@ -31,7 +31,7 @@ void test(bool print = false) {
     std::cout << "===============\n";
   }
 
-  auto patch3 = bb->at(3).insertBefore();
+  auto patch3 = bb->insertBefore(bb->at(3));
   auto a1 = patch3->insert<Add>(c3, c4);
   bb->insert<Add>(a1, a);
 
@@ -50,7 +50,7 @@ void test(bool print = false) {
     std::cout << "===============\n";
   }
 
-  auto patch4 = flat->at(6).insertBefore();
+  auto patch4 = flat->insertBefore(flat->at(6));
   for (int i = 0; i < 40000; ++i) {
     patch4->insert<Add>(
         patch4->insert<Constant>(i),

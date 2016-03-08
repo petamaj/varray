@@ -89,23 +89,34 @@ class NodeList {
   uintptr_t buf;
   uintptr_t pos;
 
+  static constexpr unsigned gapsStore = 4;
+  NodeList* gaps[gapsStore];
+  unsigned numGaps = 0;
+
  public:
   NodeList() {
+
     buf = (uintptr_t)malloc(size);
     *(NodeList**)buf = nullptr;
     pos = buf + gapSize;
   }
 
   ~NodeList() {
-    uintptr_t finger = buf;
-    while (true) {
-      NodeList** gap = reinterpret_cast<NodeList**>(finger);
-      if (*gap) delete *gap;
-      finger += gapSize;
-      if (finger >= pos)
-        break;
-      auto n = (Node*)finger;
-      finger += n->realSize();
+    if (numGaps > gapsStore) {
+      uintptr_t finger = buf;
+      while (true) {
+        NodeList** gap = reinterpret_cast<NodeList**>(finger);
+        if (*gap) delete *gap;
+        finger += gapSize;
+        if (finger >= pos)
+          break;
+        auto n = (Node*)finger;
+        finger += n->realSize();
+      }
+    } else {
+      for (unsigned i = 0; i < numGaps; ++i) {
+        delete gaps[i];
+      }
     }
     free((void*)buf);
   }
@@ -262,10 +273,15 @@ class NodeList {
       return reinterpret_cast<Node*>(pos);
     }
 
-    NodeList* insertBefore() {
+   private:
+    inline NodeList* insertBefore(NodeList* p) {
       NodeList** gap = reinterpret_cast<NodeList**>(pos - gapSize);
       if (!*gap) {
         *gap = new NodeList();
+        if (p->numGaps < p->gapsStore) {
+          p->gaps[p->numGaps] = *gap;
+        }
+        p->numGaps++;
       }
       return *gap;
     }
@@ -274,6 +290,10 @@ class NodeList {
   };
 
   friend class iterator;
+
+  NodeList* insertBefore(iterator i) {
+    return i.insertBefore(this);
+  }
 
   iterator begin() {
     return iterator(buf + gapSize, pos);

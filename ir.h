@@ -19,6 +19,10 @@ class Node {
   const Type type;
   Node(const Type type) : type(type) {}
 
+  Node(Node const & from):
+      type(from.type) {
+  }
+
   virtual void print(std::ostream& os) const = 0;
   friend std::ostream& operator<<(std::ostream& os, const Node& n) {
     n.print(os);
@@ -35,6 +39,11 @@ class Constant : public Node {
   const int value;
   Constant(int value) : Node(Type::Constant), value(value) {}
 
+  Constant(Constant const & from):
+      Node(from),
+      value(from.value) {
+  }
+
   void print(std::ostream& os) const override {
     os << value;
   }
@@ -42,20 +51,32 @@ class Constant : public Node {
 
 
 class Add : public Node {
-  intptr_t offset_l;
-  intptr_t offset_r;
+    Node * l_;
+    Node * r_;
+//  intptr_t offset_l;
+//  intptr_t offset_r;
 
  public:
   Add(Node* l, Node* r) : Node(Type::Add),
-                          offset_l((intptr_t)l - (intptr_t)this),
-                          offset_r((intptr_t)r - (intptr_t)this) {}
+      l_(l),
+      r_(r) {
+  }
+
+  Add(Add const & from):
+      Node(from),
+      l_(from.l_),
+      r_(from.r_) {
+  }
+
+//                          offset_l((intptr_t)l - (intptr_t)this),
+//                          offset_r((intptr_t)r - (intptr_t)this) {}
 
   Node* l() const {
-    return (Node*)((intptr_t)this + offset_l);
+    return l_; // (Node*)((intptr_t)this + offset_l);
   }
 
   Node* r() const {
-    return (Node*)((intptr_t)this + offset_r);
+    return r_; //(Node*)((intptr_t)this + offset_r);
   }
 
   void print(std::ostream& os) const override {
@@ -64,10 +85,13 @@ class Add : public Node {
 
   void adjustOffset(Node* old_) override {
     Add* old = static_cast<Add*>(old_);
-    Node * up_r = *(Node**)old->r();
-    Node * up_l = *(Node**)old->l();
-    offset_l = (intptr_t)up_l - (intptr_t)this;
-    offset_r = (intptr_t)up_r - (intptr_t)this;
+    l_ = *(Node**)old->l();
+    r_ = *(Node**)old->r();
+
+//    Node * up_r = *(Node**)old->r();
+//    Node * up_l = *(Node**)old->l();
+//    offset_l = (intptr_t)up_l - (intptr_t)this;
+//    offset_r = (intptr_t)up_r - (intptr_t)this;
     Node::adjustOffset(old_);
   }
 };
@@ -93,7 +117,7 @@ class NodeList {
   bool full = false;
   NodeList* nextFree = nullptr;
 
-  const uintptr_t size;
+  uintptr_t size;
 
   static constexpr unsigned gapsCacheSize = 8;
   NodeList* gapsCache[gapsCacheSize];
@@ -101,73 +125,12 @@ class NodeList {
 
   NodeList* next = nullptr;
 
- public:
-  size_t totalSize() {
-    size_t sum = size;
 
-    if (numGaps > gapsCacheSize) {
-      uintptr_t finger = buf;
-      while (true) {
-        NodeList** gap = reinterpret_cast<NodeList**>(finger);
-        if (*gap)
-          sum += (*gap)->totalSize();
-        finger += gapSize;
-        if (finger >= pos)
-          break;
-        auto n = (Node*)finger;
-        finger += n->realSize();
-      }
-    } else {
-      for (unsigned i = 0; i < numGaps; ++i) {
-        sum += gapsCache[i]->totalSize();
-      }
-    }
-    if (next)
-      sum += next->totalSize();
-    return sum;
-  }
-
-  NodeList(size_t initSize = defaultSize) : size(initSize) {
-    buf = (uintptr_t)new char[initSize];
-
-    *(NodeList**)buf = nullptr;
-    pos = buf + gapSize;
-  }
-
-  ~NodeList() {
-    if (numGaps > gapsCacheSize) {
-      uintptr_t finger = buf;
-      while (true) {
-        NodeList** gap = reinterpret_cast<NodeList**>(finger);
-        if (*gap) delete *gap;
-        finger += gapSize;
-        if (finger >= pos)
-          break;
-        auto n = (Node*)finger;
-        finger += n->realSize();
-      }
-    } else {
-      for (unsigned i = 0; i < numGaps; ++i) {
-        delete gapsCache[i];
-      }
-    }
-    if (next) delete next;
-    delete[] (char*)buf;
-  }
-
-  template<typename Node>
-  Node* insert() {
-    return new(prepareInsert(sizeof(Node))) Node();
-  }
-
-  template<typename Node, typename Arg1>
-  Node* insert(Arg1 arg1) {
-    return new(prepareInsert(sizeof(Node))) Node(arg1);
-  }
-
-  template<typename Node, typename Arg1, typename Arg2>
-  Node* insert(Arg1 arg1, Arg2 arg2) {
-    return new(prepareInsert(sizeof(Node))) Node(arg1, arg2);
+  NodeList & operator = (NodeList && from) {
+      memcpy(this, &from, sizeof(NodeList));
+      // signifies that when deleting from, we should not care about others associated with it
+      from.buf = 0;
+      return *this;
   }
 
   inline void* prepareInsert(size_t s) {
@@ -203,6 +166,114 @@ class NodeList {
     return nextFree->prepareInsert(s);
   }
 
+  // Bulk copy, to avoid doing insert(Node*) for every element
+  static uintptr_t fixup(uintptr_t old_start,
+                  uintptr_t old_end,
+                  uintptr_t new_start) {
+
+    Node* last = (Node*) old_end;
+    size_t last_size = last->realSize();
+
+    size_t s = old_end - old_start + last_size;
+    memcpy((void*)new_start, (void*)old_start, s);
+
+    uintptr_t finger_new = new_start;
+    uintptr_t finger_old = old_start;
+
+    while (finger_old <= old_end) {
+      Node* old = (Node*)finger_old;
+      Node* copy = (Node*)finger_new;
+      size_t s = copy->realSize();
+      copy->adjustOffset(old);
+      *((NodeList**)(finger_new - gapSize)) = nullptr;
+      finger_old += s + gapSize;
+      finger_new += s + gapSize;
+    }
+
+    *((NodeList**)(finger_new - gapSize)) = nullptr;
+
+    return finger_new;
+  }
+
+
+ public:
+  size_t totalSize() {
+    size_t sum = size;
+
+    if (numGaps > gapsCacheSize) {
+      uintptr_t finger = buf;
+      while (true) {
+        NodeList** gap = reinterpret_cast<NodeList**>(finger);
+        if (*gap)
+          sum += (*gap)->totalSize();
+        finger += gapSize;
+        if (finger >= pos)
+          break;
+        auto n = (Node*)finger;
+        finger += n->realSize();
+      }
+    } else {
+      for (unsigned i = 0; i < numGaps; ++i) {
+        sum += gapsCache[i]->totalSize();
+      }
+    }
+    if (next)
+      sum += next->totalSize();
+    return sum;
+  }
+
+  NodeList(size_t initSize = defaultSize) : size(initSize) {
+    buf = (uintptr_t)new char[initSize];
+
+    *(NodeList**)buf = nullptr;
+    pos = buf + gapSize;
+  }
+
+  ~NodeList() {
+      if (buf != (uintptr_t)nullptr) {
+        if (numGaps > gapsCacheSize) {
+          uintptr_t finger = buf;
+          while (true) {
+            NodeList** gap = reinterpret_cast<NodeList**>(finger);
+            if (*gap) delete *gap;
+            finger += gapSize;
+            if (finger >= pos)
+              break;
+            auto n = (Node*)finger;
+            finger += n->realSize();
+          }
+        } else {
+          for (unsigned i = 0; i < numGaps; ++i) {
+            delete gapsCache[i];
+          }
+        }
+        if (next) delete next;
+        delete[] (char*)buf;
+      }
+  }
+
+  template<typename NODE>
+  NODE * insert(NODE const & ins) {
+      return new(prepareInsert(sizeof(NODE))) NODE(ins);
+  }
+
+/*
+  template<typename Node>
+  Node* insert() {
+    return new(prepareInsert(sizeof(Node))) Node();
+  }
+
+  template<typename Node, typename Arg1>
+  Node* insert(Arg1 arg1) {
+    return new(prepareInsert(sizeof(Node))) Node(arg1);
+  }
+
+  template<typename Node, typename Arg1, typename Arg2>
+  Node* insert(Arg1 arg1, Arg2 arg2) {
+    return new(prepareInsert(sizeof(Node))) Node(arg1, arg2);
+  } */
+
+/*
   inline Node* insert(Node* n) {
     size_t s = n->realSize();
     memcpy((void*)pos, (void*)n, s);
@@ -211,59 +282,33 @@ class NodeList {
     *(NodeList**)pos = nullptr;
     pos += gapSize;
     return res;
-  }
+  } */
 
-  NodeList* flatten() {
-    auto flat = new NodeList(totalSize());
 
-    // Bulk copy, to avoid doing insert(Node*) for every element
-    auto fixup = [](uintptr_t old_start,
-                    uintptr_t old_end,
-                    uintptr_t new_start) -> uintptr_t {
 
-      Node* last = (Node*) old_end;
-      size_t last_size = last->realSize();
+  void flatten() {
+     NodeList * flat = new NodeList(totalSize());
 
-      size_t s = old_end - old_start + last_size;
-      memcpy((void*)new_start, (void*)old_start, s);
+     auto i = begin();
+     NodeList* cur = i.cur;
+     uintptr_t bulkFixupStart = i.pos;
+     uintptr_t bulkFixupEnd = i.pos;
+     unsigned depth = 0;
 
-      uintptr_t finger_new = new_start;
-      uintptr_t finger_old = old_start;
+     for (; !i.isEnd(); ++i) {
+       if (cur != i.cur || i.worklist.size() != depth) {
+         flat->pos = fixup(bulkFixupStart, bulkFixupEnd, flat->pos);
+         depth = i.worklist.size();
+         cur = i.cur;
+         bulkFixupStart = i.pos;
+       }
+       bulkFixupEnd = i.pos;
+     }
+     flat->pos = fixup(bulkFixupStart, bulkFixupEnd, flat->pos);
 
-      while (finger_old <= old_end) {
-        Node* old = (Node*)finger_old;
-        Node* copy = (Node*)finger_new;
-        size_t s = copy->realSize();
-        copy->adjustOffset(old);
-        *((NodeList**)(finger_new - gapSize)) = nullptr;
-        finger_old += s + gapSize;
-        finger_new += s + gapSize;
-      }
-
-      *((NodeList**)(finger_new - gapSize)) = nullptr;
-
-      return finger_new;
-    };
-
-    auto i = begin();
-    NodeList* cur = i.cur;
-    uintptr_t bulkFixupStart = i.pos;
-    uintptr_t bulkFixupEnd = i.pos;
-    unsigned depth = 0;
-
-    for (; !i.isEnd(); ++i) {
-      if (cur != i.cur || i.worklist.size() != depth) {
-        flat->pos = fixup(bulkFixupStart, bulkFixupEnd, flat->pos);
-        depth = i.worklist.size();
-        cur = i.cur;
-        bulkFixupStart = i.pos;
-      }
-      bulkFixupEnd = i.pos;
-    }
-    flat->pos = fixup(bulkFixupStart, bulkFixupEnd, flat->pos);
-
-    return flat;
-  }
+     *this = std::move(*flat);
+     //delete flat;
+   }
 
   class iterator {
     NodeList* cur;

@@ -1,11 +1,11 @@
 #include "ir.h"
 
-
 void test(bool print = false) {
+    //print = true;
   auto bb = new NodeList();
-  auto* c1 = bb->insert<Constant>(1);
-  auto* c2 = bb->insert<Constant>(2);
-  auto* a = bb->insert<Add>(c1, c2);
+  auto* c1 = bb->insert(Constant(1));
+  auto* c2 = bb->insert(Constant(2));
+  auto* a = bb->insert(Add(c1, c2));
 
   if (print) {
     for (auto i : *bb)
@@ -14,7 +14,7 @@ void test(bool print = false) {
   }
 
   auto patch = bb->insertBefore(bb->at(1));
-  auto c3 = patch->insert<Constant>(3);
+  auto c3 = patch->insert(Constant(3));
 
   if (print) {
     for (auto i : *bb)
@@ -23,7 +23,7 @@ void test(bool print = false) {
   }
 
   auto patch2 = bb->insertBefore(bb->at(1));
-  auto c4 = patch2->insert<Constant>(4);
+  auto c4 = patch2->insert(Constant(4));
 
   if (print) {
     for (auto i : *bb)
@@ -32,8 +32,8 @@ void test(bool print = false) {
   }
 
   auto patch3 = bb->insertBefore(bb->at(3));
-  auto a1 = patch3->insert<Add>(c3, c4);
-  bb->insert<Add>(a1, a);
+  auto a1 = patch3->insert(Add(c3, c4));
+  bb->insert(Add(a1, a));
 
   if (print) {
     for (auto i : *bb)
@@ -41,28 +41,26 @@ void test(bool print = false) {
     std::cout << "===============\n";
   }
 
-  auto flat = bb->flatten();
-  delete bb;
+  bb->flatten();
 
   if (print) {
-    for (auto i : *flat)
+    for (auto i : *bb)
       std::cout << *i << "\n";
     std::cout << "===============\n";
   }
 
-  auto patch4 = flat->insertBefore(flat->at(6));
+  auto patch4 = bb->insertBefore(bb->at(6));
   for (int i = 0; i < 40000; ++i) {
-    patch4->insert<Add>(
-        patch4->insert<Constant>(i),
-        patch4->insert<Constant>(i));
+    patch4->insert(Add(
+        patch4->insert(Constant(i)),
+        patch4->insert(Constant(i))));
   }
 
-  auto flat2 = flat->flatten();
-  delete flat;
+  bb->flatten();
 
   int count = 0;
   // Simulate an analysis:
-  for (auto i : *flat2) {
+  for (auto i : *bb) {
     if (i->type == Node::Type::Add) {
       Node * l = ((Add*)i)->l();
       if (l->type == Node::Type::Constant) {
@@ -73,7 +71,7 @@ void test(bool print = false) {
   if (print)
     std::cout << count << "\n";
 
-  delete flat2;
+  delete bb;
 }
 
 using namespace std;

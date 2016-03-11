@@ -1,20 +1,24 @@
 #include "ir.h"
 
 void test(bool print = false) {
-    //print = true;
+ // print = true;
   auto bb = new NodeList();
-  auto* c1 = bb->insert(Constant(1));
-  auto* c2 = bb->insert(Constant(2));
-  auto* a = bb->insert(Add(c1, c2));
+  auto* c1 = bb->append(Constant(1));
+  auto* c2 = bb->append(Constant(2));
+  auto* a = bb->append(Add(c1, c2));
+  c1->eraseFromList();
 
   if (print) {
     for (auto i : *bb)
-      std::cout << *i << "\n";
+      std::cout << *i << std::endl;
     std::cout << "===============\n";
   }
 
-  auto patch = bb->insertBefore(bb->at(1));
-  auto c3 = patch->insert(Constant(3));
+  //auto patch = bb->insertBefore(bb->at(1));
+  auto patch = bb->insertPatchBefore(c2);
+
+
+  auto c3 = patch->append(Constant(3));
 
   if (print) {
     for (auto i : *bb)
@@ -23,7 +27,7 @@ void test(bool print = false) {
   }
 
   auto patch2 = bb->insertBefore(bb->at(1));
-  auto c4 = patch2->insert(Constant(4));
+  auto c4 = patch2->append(Constant(4));
 
   if (print) {
     for (auto i : *bb)
@@ -32,8 +36,8 @@ void test(bool print = false) {
   }
 
   auto patch3 = bb->insertBefore(bb->at(3));
-  auto a1 = patch3->insert(Add(c3, c4));
-  bb->insert(Add(a1, a));
+  auto a1 = patch3->append(Add(c3, c4));
+  bb->append(Add(a1, a));
 
   if (print) {
     for (auto i : *bb)
@@ -51,9 +55,9 @@ void test(bool print = false) {
 
   auto patch4 = bb->insertBefore(bb->at(6));
   for (int i = 0; i < 40000; ++i) {
-    patch4->insert(Add(
-        patch4->insert(Constant(i)),
-        patch4->insert(Constant(i))));
+    patch4->append(Add(
+        patch4->append(Constant(i)),
+        patch4->append(Constant(i))));
   }
 
   bb->flatten();

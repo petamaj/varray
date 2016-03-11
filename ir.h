@@ -12,6 +12,7 @@ class Node {
   enum class Type : char {
     Constant,
     Add,
+    Deleted,
   };
 
   inline size_t realSize() const;
@@ -32,6 +33,10 @@ class Node {
   virtual void adjustOffset(Node * n) {
     *(Node**)n = this;
   }
+
+  /** Note that after calling this method, the node pointer should never be used again.
+   */
+  void eraseFromList();
 };
 
 class Constant : public Node {
@@ -53,8 +58,6 @@ class Constant : public Node {
 class Add : public Node {
     Node * l_;
     Node * r_;
-//  intptr_t offset_l;
-//  intptr_t offset_r;
 
  public:
   Add(Node* l, Node* r) : Node(Type::Add),
@@ -68,15 +71,13 @@ class Add : public Node {
       r_(from.r_) {
   }
 
-//                          offset_l((intptr_t)l - (intptr_t)this),
-//                          offset_r((intptr_t)r - (intptr_t)this) {}
 
   Node* l() const {
-    return l_; // (Node*)((intptr_t)this + offset_l);
+    return l_;
   }
 
   Node* r() const {
-    return r_; //(Node*)((intptr_t)this + offset_r);
+    return r_;
   }
 
   void print(std::ostream& os) const override {
@@ -87,19 +88,36 @@ class Add : public Node {
     Add* old = static_cast<Add*>(old_);
     l_ = *(Node**)old->l();
     r_ = *(Node**)old->r();
-
-//    Node * up_r = *(Node**)old->r();
-//    Node * up_l = *(Node**)old->l();
-//    offset_l = (intptr_t)up_l - (intptr_t)this;
-//    offset_r = (intptr_t)up_r - (intptr_t)this;
     Node::adjustOffset(old_);
   }
 };
+
+class Deleted : public Node {
+public:
+    const uint8_t deletedSize;
+
+    void print(std::ostream& os) const override {
+      os << "deleted(" << deletedSize << "X)";
+    }
+private:
+    friend class Node;
+
+    Deleted(Node * n, uint8_t size):
+        Node(Type::Deleted),
+        deletedSize(size) {
+    }
+};
+
+inline void Node::eraseFromList() {
+    new(this) Deleted(this, realSize());
+}
 
 size_t Node::realSize() const {
   switch(type) {
     case Type::Constant: return sizeof(Constant);
     case Type::Add: return sizeof(Add);
+      case Type::Deleted:
+          return ((Deleted*)this)->deletedSize;
   }
   assert(false);
   return -1;
@@ -127,6 +145,7 @@ class NodeList {
 
 
   NodeList & operator = (NodeList && from) {
+      destructor();
       memcpy(this, &from, sizeof(NodeList));
       // signifies that when deleting from, we should not care about others associated with it
       from.buf = 0;
@@ -229,62 +248,38 @@ class NodeList {
     pos = buf + gapSize;
   }
 
-  ~NodeList() {
-      if (buf != (uintptr_t)nullptr) {
-        if (numGaps > gapsCacheSize) {
-          uintptr_t finger = buf;
-          while (true) {
-            NodeList** gap = reinterpret_cast<NodeList**>(finger);
-            if (*gap) delete *gap;
-            finger += gapSize;
-            if (finger >= pos)
-              break;
-            auto n = (Node*)finger;
-            finger += n->realSize();
-          }
-        } else {
-          for (unsigned i = 0; i < numGaps; ++i) {
-            delete gapsCache[i];
-          }
+  void destructor() {
+      if (numGaps > gapsCacheSize) {
+        uintptr_t finger = buf;
+        while (true) {
+          NodeList** gap = reinterpret_cast<NodeList**>(finger);
+          if (*gap) delete *gap;
+          finger += gapSize;
+          if (finger >= pos)
+            break;
+          auto n = (Node*)finger;
+          finger += n->realSize();
         }
-        if (next) delete next;
-        delete[] (char*)buf;
+      } else {
+        for (unsigned i = 0; i < numGaps; ++i) {
+          delete gapsCache[i];
+        }
       }
+      if (next) delete next;
+      delete[] (char*)buf;
+      buf = (uintptr_t) nullptr;
+  }
+
+  ~NodeList() {
+      if (buf != (uintptr_t)nullptr)
+          destructor();
+
   }
 
   template<typename NODE>
-  NODE * insert(NODE const & ins) {
+  NODE * append(NODE const & ins) {
       return new(prepareInsert(sizeof(NODE))) NODE(ins);
   }
-
-/*
-  template<typename Node>
-  Node* insert() {
-    return new(prepareInsert(sizeof(Node))) Node();
-  }
-
-  template<typename Node, typename Arg1>
-  Node* insert(Arg1 arg1) {
-    return new(prepareInsert(sizeof(Node))) Node(arg1);
-  }
-
-  template<typename Node, typename Arg1, typename Arg2>
-  Node* insert(Arg1 arg1, Arg2 arg2) {
-    return new(prepareInsert(sizeof(Node))) Node(arg1, arg2);
-  } */
-
-/*
-  inline Node* insert(Node* n) {
-    size_t s = n->realSize();
-    memcpy((void*)pos, (void*)n, s);
-    auto res = (Node*)pos;
-    pos += s;
-    *(NodeList**)pos = nullptr;
-    pos += gapSize;
-    return res;
-  } */
-
-
 
   void flatten() {
      NodeList * flat = new NodeList(totalSize());
@@ -410,6 +405,22 @@ class NodeList {
   };
 
   friend class iterator;
+
+
+  NodeList * insertPatchBefore(Node * i) {
+      NodeList **  n = reinterpret_cast<NodeList**>((uintptr_t)i - gapSize);
+      if (*n == nullptr) {
+          *n = new NodeList();
+          if (numGaps < gapsCacheSize)
+              gapsCache[numGaps] = *n;
+          ++numGaps;
+      }
+      return *n;
+  }
+
+  NodeList * insertPatchAfter(Node * i) {
+      return nullptr;
+  }
 
   NodeList* insertBefore(iterator i) {
     return i.insertBefore(this);
